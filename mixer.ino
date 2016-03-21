@@ -1,5 +1,3 @@
-# AeroMixer
-Mixer for 2 engines and rudder for Arduino
 #include <EEPROM.h>
 
 boolean calibOn = false;
@@ -17,14 +15,13 @@ const int RGAIN =      5;
 
 // RUDDER variables
 int RUD_IN_PIN = 3;
-int RUD_OUT_PIN = 15;
 volatile int rMax = 0;
 volatile int rMin = 0;
 volatile int rIn = 0;
 volatile unsigned long rStart = 0;
 volatile int rMid = 0;
-volatile int rGain = 0;
-volatile int rOut = 0;
+volatile int rExpGain = 0;
+
 
 // ELEV variables
 int ELEV_IN_PIN = 2;
@@ -95,7 +92,7 @@ void loop() {
         if (abs(rMax + rMin - 2 * rMid) < 300 &&
             (eMax - eMin) > 500 && 
             (rMax - rMin) > 500) {                
-          rGain =  eIn;
+          rExpGain =  eIn;
           rMid = rIn;          
           
           EEPROM.write(RMIN, rMin / 10);
@@ -103,7 +100,7 @@ void loop() {
           EEPROM.write(EMIN, eMin / 10);
           EEPROM.write(EMAX, eMax / 10);   
           EEPROM.write(RMID, rMid / 10);
-          EEPROM.write(RGAIN, rGain / 10);      
+          EEPROM.write(RGAIN, rExpGain / 10);      
           blinkLED(3);                
         } else {
           // Read old values.
@@ -134,18 +131,13 @@ ISR(TIMER1_OVF_vect)
   TCCR1A = 0;
   digitalWrite(ELV1_OUT_PIN, LOW);
   digitalWrite(ELV2_OUT_PIN, LOW);
-  digitalWrite(RUD_OUT_PIN, LOW);
   sei();
 
   if (isElv1) {
     // Start ELV2 output.
     digitalWrite(ELV2_OUT_PIN, HIGH);    
     setTimer(elv2Out);
-  } else if (isElv2) {
-    // Start RUD output.
-    digitalWrite(RUD_OUT_PIN, HIGH);    
-    setTimer(rOut);    
-  }
+  } 
 }
 
 // RUDDER interrupt processing.
@@ -174,23 +166,27 @@ ISR(INT1_vect)
     // Mix calculation.
     float rInA = getValue(rMin, rMax, rIn);
     float eInA = getValue(eMin, eMax, eIn);
-    float rGainA = getValue(eMin, eMax, rGain);
+    float rExpGainA = getValue(eMin, eMax, rExpGain) * 3.0;
+    
     float rMidA = getValue(rMin, rMax, rMid);
     
     float diffRA = 2.0 * (rInA - rMidA);    
-    float elv1OutA = eInA * (1 + diffRA);
-    float elv2OutA = eInA * (1 - diffRA);
-    float rOutA =  rMidA + (rInA - rMidA) * rGainA;
+    float elv1OutA = myexp(rExpGainA, eInA * (1 + diffRA));
+    float elv2OutA = myexp(rExpGainA, eInA * (1 - diffRA));
       
     if (!calibOn) {      
       elv1Out = setValue(eMin, eMax, elv1OutA);
       elv2Out = setValue(eMin, eMax, elv2OutA);        
-      rOut = setValue(rMin, rMax, rOutA);          
     }
   }
 }
 
 // UTILITY FUNCTIONS
+
+float myexp(float k, float x)
+{
+    return (2 * x + k * x * x)/(2 + k);
+}
 
 // Set timer to fire interrupt in some period of time. 
 void setTimer(int lapse)
@@ -242,7 +238,6 @@ void systemInit()
 {
   pinMode(ELV2_OUT_PIN, OUTPUT);
   pinMode(ELV1_OUT_PIN, OUTPUT);
-  pinMode(RUD_OUT_PIN, OUTPUT);
   pinMode(LED_OUT_PIN, OUTPUT);
 
   // Timer setup.  
@@ -280,7 +275,7 @@ void readEEPROM()
   eMin = EEPROM.read(EMIN) * 10;
   eMax = EEPROM.read(EMAX) * 10;  
   rMid = EEPROM.read(RMID) * 10;
-  rGain = EEPROM.read(RGAIN) * 10;  
+  rExpGain = EEPROM.read(RGAIN) * 10;  
 }
 
 // This function blinks LED is one of PPM is missed.
