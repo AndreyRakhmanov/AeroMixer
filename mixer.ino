@@ -2,16 +2,18 @@
 
 boolean calibOn = false;
 boolean startOn = true;
+boolean calibTrap = false;
 boolean calibDone = false;
 
 // Params with GAIN and THR calibration data.
-const int NUM_PARAMS = 6;
+const int NUM_PARAMS = 7;
 const int RMIN =       0;
 const int RMAX =       1;
 const int EMIN =       2;
 const int EMAX =       3;
 const int RMID =       4;
 const int RGAIN =      5;
+const int RCUT =       6;
 
 // RUDDER variables
 int RUD_IN_PIN = 3;
@@ -21,6 +23,7 @@ volatile int rIn = 0;
 volatile unsigned long rStart = 0;
 volatile int rMid = 0;
 volatile int rExpGain = 0;
+volatile int rCut = 0;
 
 
 // ELEV variables
@@ -61,7 +64,7 @@ void loop() {
     startOn = false;
   }
    
-  if (!digitalRead(BUTTON_IN_PIN)) { 
+  if (buttonPressed()) { 
     if (!calibOn) {
       int eMinTemp = eMin;
       
@@ -72,6 +75,7 @@ void loop() {
             
       calibOn = true;
       calibDone = false;
+      calibTrap = false;
       setLED(false);
 
       delay(100);
@@ -89,31 +93,43 @@ void loop() {
       // Check if calibration is valid, and 
       // write data of calibration in EEPROM memory. 
       if (!calibDone) {
-        if (abs(rMax + rMin - 2 * rMid) < 300 &&
-            (eMax - eMin) > 500 && 
-            (rMax - rMin) > 500) {                
-          rExpGain =  eIn;
-          rMid = rIn;          
-          
-          EEPROM.write(RMIN, rMin / 10);
-          EEPROM.write(RMAX, rMax / 10);              
-          EEPROM.write(EMIN, eMin / 10);
-          EEPROM.write(EMAX, eMax / 10);   
-          EEPROM.write(RMID, rMid / 10);
-          EEPROM.write(RGAIN, rExpGain / 10);      
-          blinkLED(3);                
+        if (!calibTrap) {
+          if (abs(rMax + rMin - 2 * rMid) < 300 &&
+              (eMax - eMin) > 300 && 
+              (rMax - rMin) > 300) {                
+            rExpGain =  eIn;
+            rMid = rIn;          
+            
+            blinkLED(3); 
+            
+            if (buttonPressed()) {
+              calibTrap = true;
+            }  else {
+              calibDone = true;
+              rCut = rMin;              
+            }            
+          } else {
+            // Read old values.
+            readEEPROM();
+            calibDone = true;
+          }
         } else {
-          // Read old values.
-          readEEPROM();
+          rCut = eIn;
+          calibTrap = false;
+          calibDone = true;        
+          blinkLED(3);
         }
-        
-        calibDone = true;
-      }
-      
-      if (calibDone && eIn - eMin < 50) {  
+      } else if (eIn - eMin < 50) {  
         calibOn = false;   
-      }
-    } 
+        EEPROM.write(RMIN, rMin / 10);
+        EEPROM.write(RMAX, rMax / 10);              
+        EEPROM.write(EMIN, eMin / 10);
+        EEPROM.write(EMAX, eMax / 10);   
+        EEPROM.write(RMID, rMid / 10);
+        EEPROM.write(RGAIN, rExpGain / 10);      
+        EEPROM.write(RCUT, rCut / 10);        
+      } 
+    }
   }
     
   delay(50);    
@@ -167,12 +183,14 @@ ISR(INT1_vect)
     float rInA = getValue(rMin, rMax, rIn);
     float eInA = getValue(eMin, eMax, eIn);
     float rExpGainA = getValue(eMin, eMax, rExpGain) * 3.0;
+    float rCutA = getValue(eMin, eMax, rCut);
+    float diffCorr = 1.0 - (1.0 - eInA) * rCutA ;
     
     float rMidA = getValue(rMin, rMax, rMid);
     
     float diffRA = 2.0 * (rInA - rMidA);    
-    float elv1OutA = myexp(rExpGainA, eInA * (1 + diffRA));
-    float elv2OutA = myexp(rExpGainA, eInA * (1 - diffRA));
+    float elv1OutA = myexp(rExpGainA, eInA * (1 + diffRA * diffCorr));
+    float elv2OutA = myexp(rExpGainA, eInA * (1 - diffRA * diffCorr));
       
     if (!calibOn) {      
       elv1Out = setValue(eMin, eMax, elv1OutA);
@@ -265,6 +283,7 @@ void formatEEPROM()
    EEPROM.write(EMAX, 1964 / 10);
    EEPROM.write(RMID, 1530 / 10);
    EEPROM.write(RGAIN, 1964 / 10);
+   EEPROM.write(RCUT, 1096 / 10);
 }
 
 // Reads EEPROM into memory.
@@ -276,6 +295,7 @@ void readEEPROM()
   eMax = EEPROM.read(EMAX) * 10;  
   rMid = EEPROM.read(RMID) * 10;
   rExpGain = EEPROM.read(RGAIN) * 10;  
+  rCut = EEPROM.read(RCUT) * 10;
 }
 
 // This function blinks LED is one of PPM is missed.
@@ -297,13 +317,18 @@ void blinkLED(int num)
 {
   for (int idx=0; idx<num; idx++) {
     setLED(true);
-    delay(100);    
+    delay(150);    
     setLED(false);
-    delay(100);  
+    delay(150);  
   }
 }
 
 void setLED(boolean isOn)
 {
   digitalWrite(LED_OUT_PIN, isOn ? 0 : 1);    
+}
+
+boolean buttonPressed() 
+{
+  return !digitalRead(BUTTON_IN_PIN);
 }
