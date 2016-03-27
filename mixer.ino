@@ -1,16 +1,20 @@
+// This is programm performs on-board Arduino-based mixing of THR and RUD sygnals for RC 
+// two-engine aircraft models. The controller supports calibration procedure started 
+// by button and uses LED to indicate the controller state.
+
 #include <EEPROM.h>
 
 boolean calibOn = false;
 boolean startOn = true;
-boolean calibTrap = false;
-boolean calibDone = false;
+boolean calibParam1Done = false;
+boolean calibParam2Done = false;
 
 // Params with GAIN and THR calibration data.
 const int NUM_PARAMS = 7;
 const int RMIN =       0;
 const int RMAX =       1;
-const int EMIN =       2;
-const int EMAX =       3;
+const int TMIN =       2;
+const int TMAX =       3;
 const int RMID =       4;
 const int RGAIN =      5;
 const int RCUT =       6;
@@ -26,25 +30,25 @@ volatile int rExpGain = 0;
 volatile int rCut = 0;
 
 
-// ELEV variables
-int ELEV_IN_PIN = 2;
-volatile int eMin = 0;
-volatile int eMax = 0;
-volatile int eIn = 0;
-volatile unsigned long eStart = 0;
+// Throttle variables
+int THR_IN_PIN = 2;
+volatile int tMin = 0;
+volatile int tMax = 0;
+volatile int tIn = 0;
+volatile unsigned long tStart = 0;
 
-// ELV1 variables
-int ELV1_OUT_PIN = 4;
-volatile int elv1Out = 0;
+// THR1 variables
+int THR1_OUT_PIN = 4;
+volatile int thr1Out = 0;
 
-// ELV2 variables
-int ELV2_OUT_PIN = 5;
-volatile int elv2Out = 0;
+// THR2 variables
+int THR2_OUT_PIN = 5;
+volatile int thr2Out = 0;
 
 int BUTTON_IN_PIN = 6;
 int LED_OUT_PIN = 7;
 
-// ARDUINO main functions
+// ARDUINO-specific functions
 
 void setup() {
 
@@ -66,65 +70,65 @@ void loop() {
    
   if (buttonPressed()) { 
     if (!calibOn) {
-      int eMinTemp = eMin;
+      int tMinTemp = tMin;
       
       rMin = 1500;
       rMax = 1500;
-      eMin = 1500;
-      eMax = 1500;
+      tMin = 1500;
+      tMax = 1500;
             
       calibOn = true;
-      calibDone = false;
-      calibTrap = false;
+      calibParam2Done = false;
+      calibParam1Done = false;
       setLED(false);
 
       delay(100);
       
-      elv1Out = eMinTemp;
-      elv2Out = eMinTemp;
+      thr1Out = tMinTemp;
+      thr2Out = tMinTemp;
     }
     
     rMin = min(rMin, rIn);
     rMax = max(rMax, rIn); 
-    eMin = min(eMin, eIn);
-    eMax = max(eMax, eIn);
+    tMin = min(tMin, tIn);
+    tMax = max(tMax, tIn);
   } else {  
     if (calibOn) {
       // Check if calibration is valid, and 
       // write data of calibration in EEPROM memory. 
-      if (!calibDone) {
-        if (!calibTrap) {
+      if (!calibParam2Done) {
+        if (!calibParam1Done) {
           if (abs(rMax + rMin - 2 * rMid) < 300 &&
-              (eMax - eMin) > 300 && 
+              (tMax - tMin) > 300 && 
               (rMax - rMin) > 300) {                
-            rExpGain =  eIn;
+            rCut =  tIn;
             rMid = rIn;          
             
             blinkLED(3); 
             
             if (buttonPressed()) {
-              calibTrap = true;
+              calibParam1Done = true;
             }  else {
-              calibDone = true;
-              rCut = rMin;              
+              calibParam2Done = true;
+              rExpGain = rMin;              
             }            
           } else {
             // Read old values.
             readEEPROM();
-            calibDone = true;
+            calibParam2Done = true;
           }
         } else {
-          rCut = eIn;
-          calibTrap = false;
-          calibDone = true;        
+          rExpGain = tIn;
+          calibParam1Done = false;
+          calibParam2Done = true;        
           blinkLED(3);
         }
-      } else if (eIn - eMin < 50) {  
+      } else if (tIn - tMin < 50) {  
         calibOn = false;   
         EEPROM.write(RMIN, rMin / 10);
         EEPROM.write(RMAX, rMax / 10);              
-        EEPROM.write(EMIN, eMin / 10);
-        EEPROM.write(EMAX, eMax / 10);   
+        EEPROM.write(TMIN, tMin / 10);
+        EEPROM.write(TMAX, tMax / 10);   
         EEPROM.write(RMID, rMid / 10);
         EEPROM.write(RGAIN, rExpGain / 10);      
         EEPROM.write(RCUT, rCut / 10);        
@@ -141,83 +145,90 @@ void loop() {
 // Timer interrupt processing.
 ISR(TIMER1_OVF_vect)
 {
-  bool isElv1 = digitalRead(ELV1_OUT_PIN) == HIGH;  
-  bool isElv2 = digitalRead(ELV2_OUT_PIN) == HIGH;
+  bool isElv1 = digitalRead(THR1_OUT_PIN) == HIGH;  
+  bool isElv2 = digitalRead(THR2_OUT_PIN) == HIGH;
  
   TCCR1A = 0;
-  digitalWrite(ELV1_OUT_PIN, LOW);
-  digitalWrite(ELV2_OUT_PIN, LOW);
+  digitalWrite(THR1_OUT_PIN, LOW);
+  digitalWrite(THR2_OUT_PIN, LOW);
   sei();
 
   if (isElv1) {
-    // Start ELV2 output.
-    digitalWrite(ELV2_OUT_PIN, HIGH);    
-    setTimer(elv2Out);
+    // Start THR2 output.
+    digitalWrite(THR2_OUT_PIN, HIGH);    
+    setTimer(thr2Out);
   } 
 }
 
-// RUDDER interrupt processing.
+// RUD interrupt processing.
 ISR(INT0_vect)
 {
   if (digitalRead(RUD_IN_PIN) == LOW) {
     rIn = micros() - rStart + 20;    
   } else {
-    // Start ELV1 output.    
-    digitalWrite(ELV1_OUT_PIN, HIGH);
+    // Start THR1 output.    
+    digitalWrite(THR1_OUT_PIN, HIGH);
     rStart = micros();
-    setTimer(elv1Out);
+    setTimer(thr1Out);
     sei();
   } 
 }
 
-// ELEV interrupt processing.
+// THR interrupt processing.
 ISR(INT1_vect)
 {
-  if (digitalRead(ELEV_IN_PIN) == LOW) {
-    eIn = micros() - eStart + 20;
+  if (digitalRead(THR_IN_PIN) == LOW) {
+    tIn = micros() - tStart + 20;
   } else {
-    eStart = micros();
+    tStart = micros();
     sei();
    
     // Mix calculation.
     float rInA = getValue(rMin, rMax, rIn);
-    float eInA = getValue(eMin, eMax, eIn);
-    float rExpGainA = getValue(eMin, eMax, rExpGain) * 3.0;
-    float rCutA = getValue(eMin, eMax, rCut);
-    float diffCorr = 1.0 - (1.0 - eInA) * rCutA ;
+    float tInA = getValue(tMin, tMax, tIn);
+    float rExpGainA = getValue(tMin, tMax, rExpGain) * 3.0;
+    float rCutA = getValue(tMin, tMax, rCut);
+    float diffCorr = 1.0 - rCutA;
     
     float rMidA = getValue(rMin, rMax, rMid);
     
     float diffRA = 2.0 * (rInA - rMidA);    
-    float elv1OutA = myexp(rExpGainA, eInA * (1 + diffRA * diffCorr));
-    float elv2OutA = myexp(rExpGainA, eInA * (1 - diffRA * diffCorr));
+    float thr1 = tInA * (1.0 + diffRA * diffCorr);
+    float thr2 = tInA * (1.0 - diffRA * diffCorr);
+    float extra1 = (thr1 > 1.0) ? thr1 - 1.0 : 0.0;
+    float extra2 = (thr2 > 1.0) ? thr2 - 1.0 : 0.0;
+    
+    float thr1OutA = myexp(rExpGainA, thr1 - extra2);
+    float thr2OutA = myexp(rExpGainA, thr2 - extra1);
       
     if (!calibOn) {      
-      elv1Out = setValue(eMin, eMax, elv1OutA);
-      elv2Out = setValue(eMin, eMax, elv2OutA);        
+      thr1Out = setValue(tMin, tMax, thr1OutA);
+      thr2Out = setValue(tMin, tMax, thr2OutA);        
     }
   }
 }
 
 // UTILITY FUNCTIONS
 
+// The function models exponent in [0 - 1.0] interval.
 float myexp(float k, float x)
 {
     return (2 * x + k * x * x)/(2 + k);
 }
 
-// Set timer to fire interrupt in some period of time. 
+// Sets timer to fire interrupt in some period of time. 
 void setTimer(int lapse)
 {
   TCCR1A = 0;
   TCCR1B = 0;
   TCNT1 = - lapse * 16;
 
-  TCCR1B |= (1 << CS10);  // enable Timer1 overflow interrupt
+  // Enabling Timer1 overflow interrupt.
+  TCCR1B |= (1 << CS10);  
 }
 
 // Converts PPM pulse length in mks
-// to double 8value (0.0 - 1.0);
+// to double value in the range [0.0 - 1.0].
 float getValue(int v1, int v2, int v)
 {
   if (v < v1)
@@ -228,7 +239,7 @@ float getValue(int v1, int v2, int v)
   return (v - v1) * 1.0 / (v2 - v1);
 }
 
-// Converts double value (0.0 - 1.0) to 
+// Converts double value [0.0 - 1.0] to 
 // the PPM pulse length in mks.
 int setValue(int v1, int v2, float value)
 {
@@ -254,8 +265,8 @@ void prinrInt(const char* name, int value)
 // Initilizes pins, timer and interrupts.
 void systemInit()
 {
-  pinMode(ELV2_OUT_PIN, OUTPUT);
-  pinMode(ELV1_OUT_PIN, OUTPUT);
+  pinMode(THR2_OUT_PIN, OUTPUT);
+  pinMode(THR1_OUT_PIN, OUTPUT);
   pinMode(LED_OUT_PIN, OUTPUT);
 
   // Timer setup.  
@@ -263,7 +274,7 @@ void systemInit()
   TIMSK1 = (1 << TOIE1);  // Set CS10 bit so timer runs at clock speed:
   TCCR1B |= (1 << CS10);  // enable Timer1 overflow interrupt
   
-  // Enabling interrupts
+  // Enabling interrupts.
   cli();
   EICRA |= (1 << ISC00) | (1 << ISC10) | (1 << ISC20);
   EICRB |= (1 << ISC60) | (1 << ISC61);
@@ -279,8 +290,8 @@ void formatEEPROM()
   
    EEPROM.write(RMIN, 1096 / 10);
    EEPROM.write(RMAX, 1964 / 10);
-   EEPROM.write(EMIN, 1096 / 10);
-   EEPROM.write(EMAX, 1964 / 10);
+   EEPROM.write(TMIN, 1096 / 10);
+   EEPROM.write(TMAX, 1964 / 10);
    EEPROM.write(RMID, 1530 / 10);
    EEPROM.write(RGAIN, 1964 / 10);
    EEPROM.write(RCUT, 1096 / 10);
@@ -291,20 +302,20 @@ void readEEPROM()
 {
   rMin = EEPROM.read(RMIN) * 10;
   rMax = EEPROM.read(RMAX) * 10;  
-  eMin = EEPROM.read(EMIN) * 10;
-  eMax = EEPROM.read(EMAX) * 10;  
+  tMin = EEPROM.read(TMIN) * 10;
+  tMax = EEPROM.read(TMAX) * 10;  
   rMid = EEPROM.read(RMID) * 10;
   rExpGain = EEPROM.read(RGAIN) * 10;  
   rCut = EEPROM.read(RCUT) * 10;
 }
 
-// This function blinks LED is one of PPM is missed.
+// Blinks LED is one of PPM is missed.
 void detectInputSignals()
 {
   if (!calibOn) {
     unsigned long curTime = micros();
   
-    if (curTime - eStart > 1000000 ||
+    if (curTime - tStart > 1000000 ||
         curTime - rStart > 1000000 ) {
       setLED(false);    
     } else {
@@ -313,6 +324,7 @@ void detectInputSignals()
   }
 }
 
+// Blinks LED num times.
 void blinkLED(int num)
 {
   for (int idx=0; idx<num; idx++) {
@@ -323,11 +335,13 @@ void blinkLED(int num)
   }
 }
 
+// Sets LED on.
 void setLED(boolean isOn)
 {
   digitalWrite(LED_OUT_PIN, isOn ? 0 : 1);    
 }
 
+// Test if the button is pressed.
 boolean buttonPressed() 
 {
   return !digitalRead(BUTTON_IN_PIN);
