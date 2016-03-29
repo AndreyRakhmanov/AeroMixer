@@ -96,7 +96,7 @@ void loop() {
           if (abs(rMax + rMin - 2 * rMid) < 300 &&
               (tMax - tMin) > 300 && 
               (rMax - rMin) > 300) {                
-            // Store new values.0.
+            // Store new values.
             rCut = tIn;
             rMid = rIn;          
             
