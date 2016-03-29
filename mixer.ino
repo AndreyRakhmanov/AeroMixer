@@ -96,23 +96,26 @@ void loop() {
           if (abs(rMax + rMin - 2 * rMid) < 300 &&
               (tMax - tMin) > 300 && 
               (rMax - rMin) > 300) {                
+            // Store new values.0.
             rCut = tIn;
             rMid = rIn;          
             
-            blinkLED(3);         
+            blinkLED(3);   
+            
+            EEPROM.write(RMIN, rMin / 10);
+            EEPROM.write(RMAX, rMax / 10);              
+            EEPROM.write(TMIN, tMin / 10);
+            EEPROM.write(TMAX, tMax / 10);   
+            EEPROM.write(RMID, rMid / 10);
+            EEPROM.write(RCUT, rCut / 10);                
           } else {
             // Read old values.
             readEEPROM();
           }
+          
           calibParam1Done = true;          
       } else if (tIn - tMin < 50) {  
-        calibOn = false;   
-        EEPROM.write(RMIN, rMin / 10);
-        EEPROM.write(RMAX, rMax / 10);              
-        EEPROM.write(TMIN, tMin / 10);
-        EEPROM.write(TMAX, tMax / 10);   
-        EEPROM.write(RMID, rMid / 10);
-        EEPROM.write(RCUT, rCut / 10);        
+        calibOn = false;       
       } 
     }
   }
