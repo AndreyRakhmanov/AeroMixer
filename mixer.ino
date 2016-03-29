@@ -7,17 +7,15 @@
 boolean calibOn = false;
 boolean startOn = true;
 boolean calibParam1Done = false;
-boolean calibParam2Done = false;
 
 // Params with GAIN and THR calibration data.
-const int NUM_PARAMS = 7;
+const int NUM_PARAMS = 6;
 const int RMIN =       0;
 const int RMAX =       1;
 const int TMIN =       2;
 const int TMAX =       3;
 const int RMID =       4;
-const int RGAIN =      5;
-const int RCUT =       6;
+const int RCUT =       5;
 
 // RUDDER variables
 int RUD_IN_PIN = 3;
@@ -26,7 +24,6 @@ volatile int rMin = 0;
 volatile int rIn = 0;
 volatile unsigned long rStart = 0;
 volatile int rMid = 0;
-volatile int rExpGain = 0;
 volatile int rCut = 0;
 
 
@@ -78,7 +75,6 @@ void loop() {
       tMax = 1500;
             
       calibOn = true;
-      calibParam2Done = false;
       calibParam1Done = false;
       setLED(false);
 
@@ -96,33 +92,19 @@ void loop() {
     if (calibOn) {
       // Check if calibration is valid, and 
       // write data of calibration in EEPROM memory. 
-      if (!calibParam2Done) {
         if (!calibParam1Done) {
           if (abs(rMax + rMin - 2 * rMid) < 300 &&
               (tMax - tMin) > 300 && 
               (rMax - rMin) > 300) {                
-            rCut =  tIn;
+            rCut = tIn;
             rMid = rIn;          
             
-            blinkLED(3); 
-            
-            if (buttonPressed()) {
-              calibParam1Done = true;
-            }  else {
-              calibParam2Done = true;
-              rExpGain = rMin;              
-            }            
+            blinkLED(3);         
           } else {
             // Read old values.
             readEEPROM();
-            calibParam2Done = true;
           }
-        } else {
-          rExpGain = tIn;
-          calibParam1Done = false;
-          calibParam2Done = true;        
-          blinkLED(3);
-        }
+          calibParam1Done = true;          
       } else if (tIn - tMin < 50) {  
         calibOn = false;   
         EEPROM.write(RMIN, rMin / 10);
@@ -130,7 +112,6 @@ void loop() {
         EEPROM.write(TMIN, tMin / 10);
         EEPROM.write(TMAX, tMax / 10);   
         EEPROM.write(RMID, rMid / 10);
-        EEPROM.write(RGAIN, rExpGain / 10);      
         EEPROM.write(RCUT, rCut / 10);        
       } 
     }
@@ -186,7 +167,6 @@ ISR(INT1_vect)
     // Mix calculation.
     float rInA = getValue(rMin, rMax, rIn);
     float tInA = getValue(tMin, tMax, tIn);
-    float rExpGainA = getValue(tMin, tMax, rExpGain) * 3.0;
     float rCutA = getValue(tMin, tMax, rCut);
     float diffCorr = 1.0 - rCutA;
     
@@ -198,12 +178,9 @@ ISR(INT1_vect)
     float extra1 = (thr1 > 1.0) ? thr1 - 1.0 : 0.0;
     float extra2 = (thr2 > 1.0) ? thr2 - 1.0 : 0.0;
     
-    float thr1OutA = myexp(rExpGainA, thr1 - extra2);
-    float thr2OutA = myexp(rExpGainA, thr2 - extra1);
-      
     if (!calibOn) {      
-      thr1Out = setValue(tMin, tMax, thr1OutA);
-      thr2Out = setValue(tMin, tMax, thr2OutA);        
+      thr1Out = setValue(tMin, tMax, thr1 - extra2);
+      thr2Out = setValue(tMin, tMax, thr2 - extra1);        
     }
   }
 }
@@ -293,7 +270,6 @@ void formatEEPROM()
    EEPROM.write(TMIN, 1096 / 10);
    EEPROM.write(TMAX, 1964 / 10);
    EEPROM.write(RMID, 1530 / 10);
-   EEPROM.write(RGAIN, 1964 / 10);
    EEPROM.write(RCUT, 1096 / 10);
 }
 
@@ -305,7 +281,6 @@ void readEEPROM()
   tMin = EEPROM.read(TMIN) * 10;
   tMax = EEPROM.read(TMAX) * 10;  
   rMid = EEPROM.read(RMID) * 10;
-  rExpGain = EEPROM.read(RGAIN) * 10;  
   rCut = EEPROM.read(RCUT) * 10;
 }
 
