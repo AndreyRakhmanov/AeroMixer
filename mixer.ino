@@ -56,7 +56,6 @@ void setup() {
   readEEPROM();
 
   // On start action.
-  delay(100);
 }
 
 void loop() {    
@@ -90,18 +89,17 @@ void loop() {
     tMax = max(tMax, tIn);
   } else {  
     if (calibOn) {
-      // Check if calibration is valid, and 
-      // write data of calibration in EEPROM memory. 
         if (!calibParam1Done) {
+          rCut = tIn;
+          rMid = rIn;          
+          
+          / Check if calibration results are valid.
           if (abs(rMax + rMin - 2 * rMid) < 300 &&
               (tMax - tMin) > 300 && 
               (rMax - rMin) > 300) {                
-            // Store new values.
-            rCut = tIn;
-            rMid = rIn;          
-            
             blinkLED(3);   
-            
+
+            // write new calibration data in EEPROM memory. 
             EEPROM.write(RMIN, rMin / 10);
             EEPROM.write(RMAX, rMax / 10);              
             EEPROM.write(TMIN, tMin / 10);
@@ -190,12 +188,6 @@ ISR(INT1_vect)
 
 // UTILITY FUNCTIONS
 
-// The function models exponent in [0 - 1.0] interval.
-float myexp(float k, float x)
-{
-    return (2 * x + k * x * x)/(2 + k);
-}
-
 // Sets timer to fire interrupt in some period of time. 
 void setTimer(int lapse)
 {
@@ -248,6 +240,7 @@ void systemInit()
   pinMode(THR2_OUT_PIN, OUTPUT);
   pinMode(THR1_OUT_PIN, OUTPUT);
   pinMode(LED_OUT_PIN, OUTPUT);
+    blinkLED(3);  
 
   // Timer setup.  
   TCCR1A = 0;
