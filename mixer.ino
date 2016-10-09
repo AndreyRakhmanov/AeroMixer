@@ -93,7 +93,7 @@ void loop() {
           rCut = tIn;
           rMid = rIn;          
           
-          / Check if calibration results are valid.
+          // Check if calibration results are valid.
           if (abs(rMax + rMin - 2 * rMid) < 300 &&
               (tMax - tMin) > 300 && 
               (rMax - rMin) > 300) {                
@@ -240,7 +240,6 @@ void systemInit()
   pinMode(THR2_OUT_PIN, OUTPUT);
   pinMode(THR1_OUT_PIN, OUTPUT);
   pinMode(LED_OUT_PIN, OUTPUT);
-    blinkLED(3);  
 
   // Timer setup.  
   TCCR1A = 0;
